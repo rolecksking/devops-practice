@@ -1,0 +1,11 @@
+tasks:
+  verify-env:
+    name: Verify environment
+    description: Confirm the dev container started correctly and print tool versions.
+    command: |
+      echo "=== devops-practice environment ready ==="
+      echo "OS: $(lsb_release -ds 2>/dev/null || uname -sr)"
+      echo "User: $(whoami)"
+      echo "Git: $(git --version)"
+    triggeredBy:
+      - postDevcontainerStart
