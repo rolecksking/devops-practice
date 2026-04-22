@@ -24,5 +24,8 @@ rm -rf aws
 if ! grep -q "AWS_CLI_AUTO_PROMPT" ~/.bashrc; then
     echo 'export AWS_CLI_AUTO_PROMPT=on-partial' >> ~/.bashrc
 fi
+echo "installing fzf"
+sudo apt-get update
+sudo apt-get install -y fzf
 
 echo "AWS CLI and tree installed successfully!"
