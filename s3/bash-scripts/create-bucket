@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+echo "== create bucket"
+
+# Check for bucket name
+if [ -z "$1" ]; then
+    echo "There needs to be a bucket name e.g. ./bucket my-bucket-name."
+    exit 1
+fi
+
+BUCKET_NAME=$1
+
+echo "Creating bucket: $BUCKET_NAME in eu-north-1..."
+
+# We use s3api to be explicit about the location
+aws s3api create-bucket \
+    --bucket "$BUCKET_NAME" \
+    --region eu-north-1 \
+    --create-bucket-configuration LocationConstraint=eu-north-1
