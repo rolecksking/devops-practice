@@ -1,1 +1,9 @@
 echo "vendor/" >> .gitignore
+
+# Ignore Ruby dependencies
+vendor/
+.bundle/
+
+# Ignore AWS/Environment secrets
+.env
+.aws/
