@@ -28,9 +28,12 @@ echo "installing fzf"
 sudo apt-get update
 sudo apt-get install -y fzf
 
-sudo apt update && sudo apt install ruby-full
+echo "Installing Java..."
+sudo apt-get update
+sudo apt-get install -y default-jdk
 
-sudo apt-get update && sudo apt-get install default-jdk
+echo "Installing ruby..."
+sudo apt-get update
+sudo apt-get install -y ruby-full
 
-
-echo "AWS CLI , Ruby , java, fzf, and tree installed successfully!"
+echo "AWS CLI ,fzf, juby, java, and tree installed successfully!"
