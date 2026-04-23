@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+# 1. Select the ZIP file from the local folder
+ZIP_FILE=$(ls *.zip | fzf --prompt="Select ZIP to upload > ")
+[ -z "$ZIP_FILE" ] && exit
+
+# 2. Select Bucket or Create New
+echo "Select destination bucket:"
+BUCKET=$( (aws s3 ls | awk '{print $3}'; echo "--- CREATE NEW BUCKET ---") | fzf --prompt="Destination Bucket > ")
+
+if [ "$BUCKET" == "--- CREATE NEW BUCKET ---" ]; then
+    read -p "Enter new bucket name: " BUCKET
+    aws s3 mb "s3://$BUCKET"
+fi
+
+# 3. Recursive Navigation to find target folder
+CURRENT_PREFIX=""
+while true; do
+    ITEMS=$(aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX" | awk '{print $2}' | sed 's/\///')
+    
+    # We add options to upload here or create a new folder
+    CHOICE=$( (echo ">>> UPLOAD HERE <<<"; echo "--- CREATE NEW FOLDER ---"; echo ".. (Go Back)"; echo "$ITEMS") | fzf --prompt="S3 Path: s3://$BUCKET/$CURRENT_PREFIX > ")
+
+    [ -z "$CHOICE" ] && exit
+
+    if [ "$CHOICE" == ">>> UPLOAD HERE <<<" ]; then
+        break
+    elif [ "$CHOICE" == "--- CREATE NEW FOLDER ---" ]; then
+        read -p "Enter new folder name: " NEW_FOLDER
+        CURRENT_PREFIX="$CURRENT_PREFIX$NEW_FOLDER/"
+        break
+    elif [ "$CHOICE" == ".. (Go Back)" ]; then
+        CURRENT_PREFIX=$(echo "${CURRENT_PREFIX%/}" | sed 's/[^\/]*$//')
+    else
+        # Navigate deeper
+        if aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX$CHOICE/" > /dev/null 2>&1; then
+            CURRENT_PREFIX="$CURRENT_PREFIX$CHOICE/"
+        else
+            echo "That's not a folder!"
+            sleep 1
+        fi
+    fi
+done
+
+# 4. Upload and Cleanup
+echo "Uploading $ZIP_FILE to s3://$BUCKET/$CURRENT_PREFIX..."
+aws s3 cp "$ZIP_FILE" "s3://$BUCKET/$CURRENT_PREFIX"
+
+read -p "Delete local zip file? (y/n): " confirm
+if [[ $confirm == [yY] ]]; then
+    rm "$ZIP_FILE"
+    echo "Local file removed."
+fi
+
+echo "Done!"

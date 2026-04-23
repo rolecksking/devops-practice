@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# 1. Select Bucket
+BUCKET=$(aws s3 ls | awk '{print $3}' | fzf --prompt="1. Select Bucket > ")
+[ -z "$BUCKET" ] && exit
+
+# 2. Recursive Selection
+CURRENT_PREFIX=""
+while true; do
+    ITEMS=$(aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX" | awk '{print $2}' | sed 's/\///')
+    CHOICE=$( (echo ".. (Go Back)"; echo "--- DOWNLOAD CURRENT LEVEL ---"; echo "$ITEMS") | fzf --prompt="2. Path: s3://$BUCKET/$CURRENT_PREFIX > ")
+
+    [ -z "$CHOICE" ] && exit
+    if [ "$CHOICE" == "--- DOWNLOAD CURRENT LEVEL ---" ]; then
+        break
+    elif [ "$CHOICE" == ".. (Go Back)" ]; then
+        CURRENT_PREFIX=$(echo "${CURRENT_PREFIX%/}" | sed 's/[^\/]*$//')
+    else
+        if aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX$CHOICE/" > /dev/null 2>&1; then
+            CURRENT_PREFIX="$CURRENT_PREFIX$CHOICE/"
+        else
+            CURRENT_PREFIX="$CURRENT_PREFIX$CHOICE"
+            break
+        fi
+    fi
+done
+
+# 3. Setup Names
+# This extracts the last part of the path to use as a filename
+NAME=$(basename "${CURRENT_PREFIX%/}")
+[ -z "$NAME" ] && NAME="downloaded_items"
+ZIP_NAME="${NAME}.zip"
+TEMP_FILE="/tmp/s3_download_temp"
+
+# 4. Download (Force it into a single temp location)
+echo "Downloading..."
+aws s3 cp "s3://$BUCKET/$CURRENT_PREFIX" "$TEMP_FILE" --recursive
+
+# 5. Compress
+# We zip the contents of the temp folder
+zip -r "$ZIP_NAME" "$TEMP_FILE" > /dev/null
+
+# 6. Cleanup
+rm -rf "$TEMP_FILE"
+
+echo "Done! Created $ZIP_NAME"
+ls -la "$ZIP_NAME"
