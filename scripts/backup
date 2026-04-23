@@ -1,47 +1,68 @@
 #!/usr/bin/env bash
 
-# 1. Select Bucket
-BUCKET=$(aws s3 ls | awk '{print $3}' | fzf --prompt="1. Select Bucket > ")
-[ -z "$BUCKET" ] && exit
+# THE SAFETY HELMET: "set -e" tells the robot:
+# "If anything goes wrong (a command fails), sit down and stop immediately 
+# so I don't break things or leave half-finished work!"
+set -e 
 
-# 2. Recursive Selection
+# 1. THE TOY CHEST PICKER:
+# 'aws s3api list-buckets' gets the list of buckets from the Cloud Bank.
+# '--query' filters the list to only show the names.
+# '| fzf' turns that list into a menu you can pick from with your arrow keys.
+BUCKET=$(aws s3api list-buckets --query "Buckets[].Name" --output text | tr '\t' '\n' | fzf --prompt="1. Select Bucket > ")
+# If I didn't pick anything (hit Esc), leave the room.
+[ -z "$BUCKET" ] && { echo "No bucket selected."; exit 1; }
+
+# 2. THE GUIDED TOUR:
+# I start at the "root" (the base of the bucket).
 CURRENT_PREFIX=""
-while true; do
-    ITEMS=$(aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX" | awk '{print $2}' | sed 's/\///')
-    CHOICE=$( (echo ".. (Go Back)"; echo "--- DOWNLOAD CURRENT LEVEL ---"; echo "$ITEMS") | fzf --prompt="2. Path: s3://$BUCKET/$CURRENT_PREFIX > ")
 
-    [ -z "$CHOICE" ] && exit
-    if [ "$CHOICE" == "--- DOWNLOAD CURRENT LEVEL ---" ]; then
-        break
+while true; do
+    # 'list-objects-v2' gets all folders (CommonPrefixes) and files (Contents).
+    # '--delimiter /' is the "Folder Glasses"—it makes the bucket look like folders.
+    # 'tr \t \n' turns the weird computer-tabs into clean, readable lines.
+    ITEMS=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$CURRENT_PREFIX" --delimiter '/' --query "[CommonPrefixes[].Prefix, Contents[].Key]" --output text | tr '\t' '\n')
+    
+    # Building the menu: I offer a way to go back, a way to start downloading, or a way to dive deeper.
+    CHOICE=$( (echo ".. (Go Back)"; echo "--- DOWNLOAD THIS PATH ---"; echo "$ITEMS") | fzf --prompt="2. Path: s3://$BUCKET/$CURRENT_PREFIX > ")
+
+    # If I closed the menu (Esc), stop the robot.
+    [ -z "$CHOICE" ] && exit 1
+
+    # THE NAVIGATION RULES:
+    # If I say "Download this path", I am happy with my choice, so I stop walking (break the loop).
+    if [ "$CHOICE" == "--- DOWNLOAD THIS PATH ---" ]; then break
+    # If I say "Go Back", I use 'sed' to snip off the last folder name in the path.
     elif [ "$CHOICE" == ".. (Go Back)" ]; then
         CURRENT_PREFIX=$(echo "${CURRENT_PREFIX%/}" | sed 's/[^\/]*$//')
+    # Otherwise, I dive deeper into the folder I just picked.
     else
-        if aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX$CHOICE/" > /dev/null 2>&1; then
-            CURRENT_PREFIX="$CURRENT_PREFIX$CHOICE/"
-        else
-            CURRENT_PREFIX="$CURRENT_PREFIX$CHOICE"
-            break
-        fi
+        CURRENT_PREFIX="$CURRENT_PREFIX$CHOICE"
     fi
 done
 
-# 3. Setup Names
-# This extracts the last part of the path to use as a filename
+# 3. THE DELIVERY (Download & Zip):
+# 'basename' takes a path like "folder/subfolder/" and just gives me the name "subfolder".
+# If I'm at the root, I just call it "downloaded_items".
 NAME=$(basename "${CURRENT_PREFIX%/}")
 [ -z "$NAME" ] && NAME="downloaded_items"
 ZIP_NAME="${NAME}.zip"
-TEMP_FILE="/tmp/s3_download_temp"
 
-# 4. Download (Force it into a single temp location)
+# I create a temporary "holding box" called /tmp/s3_download.
+TEMP_DIR="/tmp/s3_download"
+
 echo "Downloading..."
-aws s3 cp "s3://$BUCKET/$CURRENT_PREFIX" "$TEMP_FILE" --recursive
+# First I clean my holding box, then I make a fresh one.
+rm -rf "$TEMP_DIR" && mkdir -p "$TEMP_DIR"
 
-# 5. Compress
-# We zip the contents of the temp folder
-zip -r "$ZIP_NAME" "$TEMP_FILE" > /dev/null
+# 'aws s3 cp --recursive' tells the robot to copy every single file in this path to my holding box.
+aws s3 cp "s3://$BUCKET/$CURRENT_PREFIX" "$TEMP_DIR" --recursive
 
-# 6. Cleanup
-rm -rf "$TEMP_FILE"
+# 'zip -r' takes everything in my holding box and shrink-wraps it into a zip file.
+zip -r "$ZIP_NAME" "$TEMP_DIR" > /dev/null
 
+# 4. THE CLEANER: Throw away the holding box so I don't leave a mess.
+rm -rf "$TEMP_DIR"
+
+# MISSION COMPLETE: Tell the human what I made.
 echo "Done! Created $ZIP_NAME"
-ls -la "$ZIP_NAME"

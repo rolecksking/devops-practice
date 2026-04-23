@@ -1,55 +1,84 @@
 #!/usr/bin/env bash
 
-# 1. Select the ZIP file from the local folder
+# THE SAFETY HELMET: "set -e" tells the robot: 
+# "If anything goes wrong (a command fails), sit down and stop immediately 
+# so I don't break things or delete the wrong files!"
+set -e 
+
+# 1. THE TOY PICKER: 
+# 'ls *.zip' lists all files ending in .zip.
+# '| fzf' slides those files into a menu so I can pick one.
+# '$( ... )' puts my choice into the 'ZIP_FILE' memory bag.
 ZIP_FILE=$(ls *.zip | fzf --prompt="Select ZIP to upload > ")
-[ -z "$ZIP_FILE" ] && exit
+# If I picked nothing (hit Esc), leave the room.
+[ -z "$ZIP_FILE" ] && { echo "No file selected."; exit 1; }
 
-# 2. Select Bucket or Create New
+# 2. THE TOY CHEST PICKER:
+# 'aws s3api list-buckets' gets the raw data from the cloud "Bank".
+# '--query "Buckets[].Name"' uses a filter to grab only the names (ignore dates/owners).
+# '--output text' converts the computer-code (JSON) into plain human words.
+# 'tr \t \n' is the translator: it finds the invisible "Tab" gaps and turns them into "New Lines" so fzf can see them as a list.
+# 'echo "--- CREATE NEW BUCKET ---"' adds a custom button to the menu.
+# '| fzf' builds the menu for me to select.
 echo "Select destination bucket:"
-BUCKET=$( (aws s3 ls | awk '{print $3}'; echo "--- CREATE NEW BUCKET ---") | fzf --prompt="Destination Bucket > ")
+BUCKET=$( (aws s3api list-buckets --query "Buckets[].Name" --output text | tr '\t' '\n'; echo "--- CREATE NEW BUCKET ---") | fzf --prompt="Destination Bucket > ")
 
+# Handle the "Create New" custom button:
+# If I picked the custom button, the robot pauses and asks me for a new name.
+# 'aws s3 mb' (Make Bucket) builds the new chest in the cloud.
 if [ "$BUCKET" == "--- CREATE NEW BUCKET ---" ]; then
     read -p "Enter new bucket name: " BUCKET
-    aws s3 mb "s3://$BUCKET"
+    aws s3 mb "s3://$BUCKET" --region eu-north-1
 fi
 
-# 3. Recursive Navigation to find target folder
+# 3. THE GUIDED TOUR: 
+# A loop that walks me through the folders until I find the right "Room".
 CURRENT_PREFIX=""
 while true; do
-    ITEMS=$(aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX" | awk '{print $2}' | sed 's/\///')
+    # 'list-objects-v2' fetches the folder map.
+    # '--delimiter /' is the secret glass that shows folders as folders instead of long filenames.
+    # '--query CommonPrefixes' tells it: "Only look for folders, ignore the files for now."
+    ITEMS=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$CURRENT_PREFIX" --delimiter '/' --query "CommonPrefixes[].Prefix" --output text | tr '\t' '\n')
     
-    # We add options to upload here or create a new folder
+    # Building the menu: I offer 3 buttons: Upload here, Create a folder, or Go Back.
     CHOICE=$( (echo ">>> UPLOAD HERE <<<"; echo "--- CREATE NEW FOLDER ---"; echo ".. (Go Back)"; echo "$ITEMS") | fzf --prompt="S3 Path: s3://$BUCKET/$CURRENT_PREFIX > ")
 
-    [ -z "$CHOICE" ] && exit
+    # If I closed the menu (Esc), stop the robot.
+    [ -z "$CHOICE" ] && exit 1
 
-    if [ "$CHOICE" == ">>> UPLOAD HERE <<<" ]; then
-        break
+    # LOGIC SWITCH: 
+    # If I say "Upload Here," stop the loop and start the delivery.
+    if [ "$CHOICE" == ">>> UPLOAD HERE <<<" ]; then break
+    # If I say "Create folder," ask for a name, add a "/" to the path name, and stop.
     elif [ "$CHOICE" == "--- CREATE NEW FOLDER ---" ]; then
         read -p "Enter new folder name: " NEW_FOLDER
         CURRENT_PREFIX="$CURRENT_PREFIX$NEW_FOLDER/"
         break
+    # If I say "Go Back," use 'sed' to strip the last folder name off the path (walking backwards).
     elif [ "$CHOICE" == ".. (Go Back)" ]; then
         CURRENT_PREFIX=$(echo "${CURRENT_PREFIX%/}" | sed 's/[^\/]*$//')
+    # Otherwise, walk into the room I picked.
     else
-        # Navigate deeper
-        if aws s3 ls "s3://$BUCKET/$CURRENT_PREFIX$CHOICE/" > /dev/null 2>&1; then
-            CURRENT_PREFIX="$CURRENT_PREFIX$CHOICE/"
-        else
-            echo "That's not a folder!"
-            sleep 1
-        fi
+        CURRENT_PREFIX="$CHOICE"
     fi
 done
 
-# 4. Upload and Cleanup
+# 4. THE DELIVERY: 
+# 'aws s3 cp' is the final command that sends the toy (file) into the chest (bucket).
+# "$CURRENT_PREFIX" makes sure it goes inside the specific folder we found.
 echo "Uploading $ZIP_FILE to s3://$BUCKET/$CURRENT_PREFIX..."
 aws s3 cp "$ZIP_FILE" "s3://$BUCKET/$CURRENT_PREFIX"
 
-read -p "Delete local zip file? (y/n): " confirm
+# 5. THE CLEANER: 
+# Ask the human if they want the robot to throw the local zip in the trash.
+# '[[ $confirm == [yY] ]]' checks for both lowercase 'y' and uppercase 'Y'.
+read -p "Delete local zip file '$ZIP_FILE'? (y/n): " confirm
 if [[ $confirm == [yY] ]]; then
     rm "$ZIP_FILE"
     echo "Local file removed."
+else
+    echo "Local file kept."
 fi
 
+# 6. MISSION COMPLETE
 echo "Done!"
