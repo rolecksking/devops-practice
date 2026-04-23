@@ -32,8 +32,9 @@ echo "Installing Java..."
 sudo apt-get update
 sudo apt-get install -y default-jdk
 
-echo "Installing ruby..."
+echo "Installing Ruby and Bundler..."
 sudo apt-get update
-sudo apt-get install -y ruby-full
+# 'ruby-full' installs Ruby, 'ruby-bundler' installs the bundle tool
+sudo apt-get install -y ruby-full -y ruby-bundler
 
-echo "AWS CLI ,fzf, juby, java, and tree installed successfully!"
+echo "AWS CLI ,fzf, juby and bundler, java, and tree installed successfully!"
