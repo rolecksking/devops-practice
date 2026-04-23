@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# 1. Logic: If argument $1 is provided, use it. Otherwise, use fzf.
+if [ -z "$1" ]; then
+    echo "No bucket name provided. Launching selector..."
+    BUCKET=$(aws s3api list-buckets --query "Buckets[].Name" --output text | tr '\t' '\n' | fzf --prompt="Select a Bucket > ")
+else
+    BUCKET=$1
+fi
+
+# 2. Safety Check: Did the user actually pick a bucket?
+if [ -z "$BUCKET" ]; then
+    echo "No bucket selected. Exiting."
+    exit 1
+fi
+
+echo "Choose sort by: (n)ame, (s)ize, (d)ate"
+read -r SORT_BY
+echo "Order: (a)scending or (d)escending?"
+read -r ORDER
+
+case $SORT_BY in
+    n) COL=4 ;; # Note: Adjusted to 4 because 'aws s3 ls' outputs: Date Time Size Name
+    s) COL=3 ;; # Size is column 3
+    d) COL=1 ;; # Date is column 1
+    *) COL=4 ;;
+esac
+
+SORT_CMD="sort -k$COL"
+if [ "$ORDER" == "d" ]; then
+    SORT_CMD="$SORT_CMD -r"
+fi
+
+echo "Listing objects in s3://$BUCKET..."
+# The --human-readable flag makes 'ls' output weird, so let's stick to standard for sorting
+aws s3 ls "s3://$BUCKET/" | $SORT_CMD

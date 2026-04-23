@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -e
+
+# 1. Input Check
+if [ -z "$1" ]; then
+    echo "Usage: ./sync <bucket-name>"
+    exit 1
+fi
+BUCKET_NAME=$1
+LOCAL_DIR="/tmp/s3-bash-scripts"
+
+# 2. Folder Management
+echo "Current Bucket: $BUCKET_NAME"
+echo "Do you want to upload to a folder? (Enter folder name, or leave blank for root)"
+read -r FOLDER_NAME
+
+# If FOLDER_NAME exists, add a slash to make it an S3 prefix
+TARGET_PATH=""
+if [ -n "$FOLDER_NAME" ]; then
+    TARGET_PATH="$FOLDER_NAME/"
+fi
+
+# 3. Conflict Handling (Check if file already exists in the bucket)
+for FILE in "$LOCAL_DIR"/*; do
+    FILENAME=$(basename "$FILE")
+    
+    # Check if the file exists in the bucket already
+    if aws s3 ls "s3://$BUCKET_NAME/$TARGET_PATH$FILENAME" > /dev/null 2>&1; then
+        echo "Conflict: $FILENAME already exists in $BUCKET_NAME/$TARGET_PATH"
+        echo "Do you want to (o)verwrite, (r)ename, or (s)kip?"
+        read -r choice
+        
+        if [ "$choice" == "r" ]; then
+            echo "Enter new name for $FILENAME:"
+            read -r NEW_NAME
+            FILENAME=$NEW_NAME
+        elif [ "$choice" == "s" ]; then
+            continue # Skip this file
+        fi
+    fi
+    
+    # 4. Upload
+    echo "Uploading $FILENAME..."
+    aws s3 cp "$FILE" "s3://$BUCKET_NAME/$TARGET_PATH$FILENAME"
+done
+
+echo "Done!"

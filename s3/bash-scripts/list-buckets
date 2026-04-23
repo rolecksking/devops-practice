@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+echo "== Listing buckets alphabetically:"
+aws s3api list-buckets --query "Buckets[].Name" --output text | tr '\t' '\n' | sort
